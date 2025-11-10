@@ -1,0 +1,15 @@
+memory_limit = 256M
+upload_max_filesize = 64M
+post_max_size = 64M
+max_execution_time = 300
+max_input_time = 1000
+max_input_vars = 3000
+
+display_errors = Off
+log_errors = On
+error_log = /var/log/php/error.log
+
+opcache.enable = 1
+opcache.memory_consumption = 128
+opcache.max_accelerated_files = 10000
+opcache.revalidate_freq = 2
