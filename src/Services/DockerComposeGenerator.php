@@ -3,6 +3,7 @@
 namespace Usermp\Dockerize\Services;
 
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
 
 class DockerComposeGenerator
 {
