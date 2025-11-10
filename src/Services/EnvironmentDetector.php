@@ -2,8 +2,12 @@
 
 namespace Usermp\Dockerize\Services;
 
+use Illuminate\Filesystem\Filesystem;
+
 class EnvironmentDetector
 {
+    public function __construct(protected Filesystem $files) {}
+
     public function detect(): array
     {
         return [
@@ -18,7 +22,10 @@ class EnvironmentDetector
 
     protected function detectPHPVersion(): string
     {
-        // Detect from composer.json or system
+        if (!$this->files->exists(base_path("composer.json"))) {
+            return "8.2";
+        }
+
         $composer = json_decode(
             file_get_contents(base_path("composer.json")),
             true,
@@ -26,8 +33,8 @@ class EnvironmentDetector
 
         if (isset($composer["require"]["php"])) {
             $phpRequirement = $composer["require"]["php"];
-            if (preg_match("/\d+\.\d+/", $phpRequirement, $matches)) {
-                return $matches[0];
+            if (preg_match("/~?(\d+\.\d+)/", $phpRequirement, $matches)) {
+                return $matches[1];
             }
         }
 
@@ -36,6 +43,10 @@ class EnvironmentDetector
 
     protected function detectDatabase(): string
     {
+        if (!$this->files->exists(base_path(".env"))) {
+            return "mysql";
+        }
+
         $env = file_get_contents(base_path(".env"));
 
         if (str_contains($env, "DB_CONNECTION=mysql")) {
@@ -54,6 +65,11 @@ class EnvironmentDetector
     protected function detectDependencies(): array
     {
         $dependencies = [];
+
+        if (!$this->files->exists(base_path("composer.json"))) {
+            return $dependencies;
+        }
+
         $composer = json_decode(
             file_get_contents(base_path("composer.json")),
             true,
@@ -61,9 +77,11 @@ class EnvironmentDetector
 
         // Check for common packages
         $commonPackages = [
-            "redis" => "redis",
-            "mongodb" => "mongo",
-            "elasticsearch" => "elasticsearch",
+            "predis/predis" => "redis",
+            "mongodb/mongodb" => "mongodb",
+            "elasticsearch/elasticsearch" => "elasticsearch",
+            "laravel/scout" => "scout",
+            "meilisearch/meilisearch-php" => "meilisearch",
         ];
 
         foreach ($commonPackages as $package => $service) {
@@ -77,25 +95,27 @@ class EnvironmentDetector
 
     protected function detectNodeVersion(): ?string
     {
-        if (file_exists(base_path("package.json"))) {
-            $package = json_decode(
-                file_get_contents(base_path("package.json")),
-                true,
-            );
-            if (isset($package["engines"]["node"])) {
-                return preg_replace(
-                    "/[^\d.]/",
-                    "",
-                    $package["engines"]["node"],
-                );
-            }
+        if (!$this->files->exists(base_path("package.json"))) {
+            return null;
         }
 
-        return null;
+        $package = json_decode(
+            file_get_contents(base_path("package.json")),
+            true,
+        );
+        if (isset($package["engines"]["node"])) {
+            return preg_replace("/[^\d.]/", "", $package["engines"]["node"]);
+        }
+
+        return "18";
     }
 
     protected function detectCacheDriver(): string
     {
+        if (!$this->files->exists(base_path(".env"))) {
+            return "file";
+        }
+
         $env = file_get_contents(base_path(".env"));
         if (str_contains($env, "CACHE_DRIVER=redis")) {
             return "redis";
@@ -108,6 +128,10 @@ class EnvironmentDetector
 
     protected function detectQueueDriver(): string
     {
+        if (!$this->files->exists(base_path(".env"))) {
+            return "sync";
+        }
+
         $env = file_get_contents(base_path(".env"));
         if (str_contains($env, "QUEUE_CONNECTION=redis")) {
             return "redis";

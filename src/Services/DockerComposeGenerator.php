@@ -12,15 +12,23 @@ class DockerComposeGenerator
     public function generate(array $environment): void
     {
         $stubPath = __DIR__ . "/../Stubs/docker-compose.stub";
+
+        // اگر فایل stub وجود ندارد، ایجادش کن
+        if (!$this->files->exists($stubPath)) {
+            $this->createDefaultDockerComposeStub();
+        }
+
         $stub = $this->files->get($stubPath);
 
         $replacements = [
             '{{ $database }}' => $environment["database"],
             '{{ $phpVersion }}' => $environment["php_version"],
-            '{{ $nodeVersion }}' => $environment["node_version"] ?? "",
+            '{{ $nodeVersion }}' => $environment["node_version"] ?? "18",
             '{{ $cacheDriver }}' => $environment["cache_driver"],
             '{{ $queueDriver }}' => $environment["queue_driver"],
-            '{{ $dependencies }}' => $environment["dependencies"],
+            '{{ $dependencies }}' => $this->formatDependencies(
+                $environment["dependencies"],
+            ),
             '{{ $databaseImage }}' => $this->getDatabaseImage(
                 $environment["database"],
             ),
@@ -43,6 +51,11 @@ class DockerComposeGenerator
         );
 
         $this->files->put(base_path("docker-compose.yml"), $content);
+    }
+
+    protected function formatDependencies(array $dependencies): string
+    {
+        return var_export($dependencies, true);
     }
 
     protected function getDatabaseImage(string $database): string
@@ -198,7 +211,93 @@ class DockerComposeGenerator
 
     protected function hasMailConfiguration(): bool
     {
+        if (!$this->files->exists(base_path(".env"))) {
+            return false;
+        }
+
         $env = file_get_contents(base_path(".env"));
         return Str::contains($env, ["MAIL_MAILER=", "MAIL_HOST="]);
+    }
+
+    protected function createDefaultDockerComposeStub()
+    {
+        $stubPath = __DIR__ . "/../Stubs/docker-compose.stub";
+        $this->ensureStubDirectoryExists();
+
+        $defaultStub = <<<'YAML'
+        version: '3.8'
+
+        services:
+          app:
+            build:
+              context: .
+              dockerfile: Dockerfile
+            image: laravel-app
+            container_name: laravel-app
+            restart: unless-stopped
+            working_dir: /var/www
+            volumes:
+              - ./:/var/www
+            networks:
+              - laravel-network
+            extra_hosts:
+              - "host.docker.internal:host-gateway"
+
+          webserver:
+            image: nginx:alpine
+            container_name: nginx-server
+            restart: unless-stopped
+            ports:
+              - "8000:80"
+            volumes:
+              - ./:/var/www
+              - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+            networks:
+              - laravel-network
+            depends_on:
+              - app
+
+          database:
+            image: {{ $databaseImage }}
+            container_name: laravel-db
+            restart: unless-stopped
+            environment:
+        @if($database === 'pgsql')
+              POSTGRES_DB: ${DB_DATABASE}
+              POSTGRES_USER: ${DB_USERNAME}
+              POSTGRES_PASSWORD: ${DB_PASSWORD}
+              POSTGRES_ROOT_PASSWORD: ${DB_PASSWORD}
+        @else
+              MYSQL_DATABASE: ${DB_DATABASE}
+              MYSQL_USER: ${DB_USERNAME}
+              MYSQL_PASSWORD: ${DB_PASSWORD}
+              MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+        @endif
+            volumes:
+              - dbdata:/var/lib/{{ $databaseService }}
+            networks:
+              - laravel-network
+            ports:
+              - "{{ $databasePort }}:{{ $databasePort }}"
+
+        {{ $additionalServices }}
+
+        volumes:
+          {{ $volumes }}
+
+        networks:
+          laravel-network:
+            driver: bridge
+        YAML;
+
+        $this->files->put($stubPath, $defaultStub);
+    }
+
+    protected function ensureStubDirectoryExists(): void
+    {
+        $stubDir = __DIR__ . "/../Stubs";
+        if (!$this->files->exists($stubDir)) {
+            $this->files->makeDirectory($stubDir, 0755, true);
+        }
     }
 }

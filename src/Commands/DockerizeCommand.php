@@ -30,7 +30,7 @@ class DockerizeCommand extends Command
         parent::__construct();
 
         $this->files = new Filesystem();
-        $this->detector = new EnvironmentDetector();
+        $this->detector = new EnvironmentDetector($this->files);
         $this->dockerGenerator = new DockerFileGenerator($this->files);
         $this->composeGenerator = new DockerComposeGenerator($this->files);
     }
